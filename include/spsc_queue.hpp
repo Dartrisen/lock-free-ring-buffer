@@ -3,7 +3,15 @@
 #include <atomic>
 #include <cstddef>
 #include <iostream>
+#include <new>
 #include <utility>
+
+#if defined(__cpp_lib_hardware_interference_size)
+using std::hardware_destructive_interference_size;
+#else
+// Safe standard fallback for x86 and ARM64
+constexpr std::size_t hardware_destructive_interference_size = 64;
+#endif
 
 /**
  * @brief A lock-free Single Producer Single Consumer (SPSC) queue
@@ -38,8 +46,21 @@ struct SPSCQueue {
      * @param value The value to push.
      * @return true if the push was successful, false if the queue is full.
      */
-    [[nodiscard]]
-    bool push(const T& value) noexcept(std::is_nothrow_copy_constructible_v<T>);
+    [[nodiscard]] bool push(const T& value) noexcept(std::is_nothrow_copy_constructible_v<T>) {
+        size_t tail = tail_.load(std::memory_order_relaxed); ///< atomic read/write with no ordering constraints
+        size_t next = increment(tail);
+
+        if (next == head_.load(std::memory_order_acquire)) { ///< all stores before this load are visible to any
+                                                             ///< thread/process that aquires this location
+            return false;                                    // full
+        }
+
+        buffer_[tail] = value;
+
+        tail_.store(next, std::memory_order_release); ///< all loads after this one see the effects of all stores that
+                                                      ///< release this location
+        return true;
+    }
 
     /**
      * @brief Attempts to pop an element from the queue.
@@ -47,49 +68,27 @@ struct SPSCQueue {
      * @param value Reference to store the popped value.
      * @return true if the pop was successful, false if the queue is empty.
      */
-    [[nodiscard]]
-    bool pop(T& value) noexcept(std::is_nothrow_copy_assignable_v<T>);
+    [[nodiscard]] bool pop(T& value) noexcept(std::is_nothrow_copy_assignable_v<T>) {
+        size_t head = head_.load(std::memory_order_relaxed);
+
+        if (head == tail_.load(std::memory_order_acquire)) {
+            return false; // empty
+        }
+
+        value = buffer_[head];
+
+        head_.store(increment(head), std::memory_order_release);
+        return true;
+    }
 
   private:
-    [[nodiscard]]
-    size_t increment(size_t index) const noexcept {
+    [[nodiscard]] size_t increment(size_t index) const noexcept {
         return (index + 1) & (N - 1);
     }
     T buffer_[N]; ///< Circular buffer to store elements.
 
-    alignas(std::hardware_destructive_interference_size) std::atomic<size_t> head_{
+    alignas(hardware_destructive_interference_size) std::atomic<size_t> head_{
         0}; ///< Consumer read index, cache-aligned.
-    alignas(std::hardware_destructive_interference_size) std::atomic<size_t> tail_{
+    alignas(hardware_destructive_interference_size) std::atomic<size_t> tail_{
         0}; ///< Producer write index, cache-aligned.
 };
-
-template <typename T, size_t N>
-bool SPSCQueue<T, N>::push(const T& value) noexcept(std::is_nothrow_copy_constructible_v<T>) {
-    size_t tail = tail_.load(std::memory_order_relaxed); ///< atomic read/write with no ordering constraints
-    size_t next = increment(tail);
-
-    if (next == head_.load(std::memory_order_acquire)) { ///< all stores before this load are visible to any
-                                                         ///< thread/process that aquires this location
-        return false;                                    // full
-    }
-
-    buffer_[tail] = value;
-
-    tail_.store(next, std::memory_order_release); ///< all loads after this one see the effects of all stores that
-                                                  ///< release this location
-    return true;
-}
-
-template <typename T, size_t N>
-bool SPSCQueue<T, N>::pop(T& value) noexcept(std::is_nothrow_copy_assignable_v<T>) {
-    size_t head = head_.load(std::memory_order_relaxed);
-
-    if (head == tail_.load(std::memory_order_acquire)) {
-        return false; // empty
-    }
-
-    value = buffer_[head];
-
-    head_.store(increment(head), std::memory_order_release);
-    return true;
-}
