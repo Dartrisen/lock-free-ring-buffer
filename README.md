@@ -15,7 +15,7 @@ Key features:
 ## Requirements
 
 - C++17 or later
-- Bazel build system
+- Bazel build system (v5.0+)
 - A compiler supporting `<atomic>` (e.g., GCC, Clang)
 
 ## Building
@@ -34,36 +34,35 @@ Run the benchmark to measure throughput and latency:
 bazel run //:spsc_benchmark
 ```
 
-Example output:
+Sample benchmark output:
 
 ```
-Single-producer/single-consumer benchmark
-Queue entries = 65535
-Iterations    = 1000000 push + 1000000 pop
-Elapsed time  = 0.097074 s
-Throughput    = 20602857 ops/s
+===========================================
+     SPSC Queue Performance Benchmark      
+===========================================
 
-Push latencies (ns):
-  mean = 45.4 ns
-  p50  = 40 ns
-  p95  = 79 ns
-  p99  = 80 ns
-  max  = 44297 ns
+[1/3] Running Warmup Phase...
+[2/3] Benchmarking Max Throughput (50000000 ops)...
+  Result: 184.25 Million ops/sec
 
-Pop latencies (ns):
-  mean = 47.1 ns
-  p50  = 40 ns
-  p95  = 79 ns
-  p99  = 89 ns
-  max  = 42580 ns
+[3/3] Benchmarking Transit Latency (5000000 samples)...
+  One-Way Transit Latency Profile:
+  Mean : 24.3 ns
+  p50  : 21 ns
+  p90  : 32 ns
+  p95  : 45 ns
+  p99  : 85 ns
+  Max  : 1420 ns
+
+Benchmark Complete.
 ```
 
 ## Usage
 
-Include `SPSCQueue.hpp` in your project and instantiate the template:
+Include `spsc_queue.hpp` in your project and instantiate the template:
 
 ```cpp
-#include "SPSCQueue.hpp"
+#include "spsc_queue.hpp"
 
 SPSCQueue<int, 1024> queue; // Capacity must be a power of 2
 
@@ -73,6 +72,7 @@ queue.push(42);
 // Consumer thread
 int value;
 if (queue.pop(value)) {
+    std::cout << "Received: " << value << '\n';
     // Use value
 }
 ```
