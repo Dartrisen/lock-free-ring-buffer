@@ -2,7 +2,8 @@
 
 #include <atomic>
 #include <cstddef>
-#include <type_traits>
+#include <iostream>
+#include <utility>
 
 /**
  * @brief A lock-free Single Producer Single Consumer (SPSC) queue
@@ -20,6 +21,8 @@ template <typename T, size_t N>
 struct SPSCQueue {
     static_assert(N >= 2, "N must be at least 2 for the queue to function correctly");
     static_assert((N & (N - 1)) == 0, "N must be a power of 2 for optimal performance");
+    static_assert(std::atomic<std::size_t>::is_always_lock_free,
+                  "std::atomic<std::size_t> must be lock-free for optimal performance");
 
   public:
     SPSCQueue() noexcept = default;
@@ -54,22 +57,26 @@ struct SPSCQueue {
     }
     T buffer_[N]; ///< Circular buffer to store elements.
 
-    alignas(64) std::atomic<size_t> head_{0}; ///< Consumer read index, cache-aligned.
-    alignas(64) std::atomic<size_t> tail_{0}; ///< Producer write index, cache-aligned.
+    alignas(std::hardware_destructive_interference_size) std::atomic<size_t> head_{
+        0}; ///< Consumer read index, cache-aligned.
+    alignas(std::hardware_destructive_interference_size) std::atomic<size_t> tail_{
+        0}; ///< Producer write index, cache-aligned.
 };
 
 template <typename T, size_t N>
 bool SPSCQueue<T, N>::push(const T& value) noexcept(std::is_nothrow_copy_constructible_v<T>) {
-    size_t tail = tail_.load(std::memory_order_relaxed);
+    size_t tail = tail_.load(std::memory_order_relaxed); ///< atomic read/write with no ordering constraints
     size_t next = increment(tail);
 
-    if (next == head_.load(std::memory_order_acquire)) {
-        return false; // full
+    if (next == head_.load(std::memory_order_acquire)) { ///< all stores before this load are visible to any
+                                                         ///< thread/process that aquires this location
+        return false;                                    // full
     }
 
     buffer_[tail] = value;
 
-    tail_.store(next, std::memory_order_release);
+    tail_.store(next, std::memory_order_release); ///< all loads after this one see the effects of all stores that
+                                                  ///< release this location
     return true;
 }
 
