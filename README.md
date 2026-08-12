@@ -14,7 +14,7 @@ Key features:
 
 ## Requirements
 
-- C++11 or later
+- C++17 or later
 - Bazel build system
 - A compiler supporting `<atomic>` (e.g., GCC, Clang)
 
