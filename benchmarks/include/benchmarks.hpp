@@ -18,15 +18,15 @@
 #endif
 
 // Required header for x86 pause intrinsic
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+#if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #endif
 
-// Spin hint: x86 uses pause, Apple Silicon ARM64 (M4) uses assembly yield
+// Spin hint: 64-bit ARM (Apple Silicon M1-M4) uses assembly yield, 64-bit x86 uses pause
 inline void cpu_relax() {
 #if defined(__aarch64__) || defined(_M_ARM64)
     asm volatile("yield" ::: "memory");
-#elif defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+#elif defined(__x86_64__) || defined(_M_X64)
 #if defined(_MSC_VER)
     _mm_pause();
 #else
